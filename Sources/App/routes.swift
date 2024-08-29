@@ -2,13 +2,25 @@ import Fluent
 import Vapor
 
 func routes(_ app: Application) throws {
-    app.get { req async throws in
-        try await req.view.render("index", ["title": "Hello Vapor!"])
+    // Login routes
+    let passwordProtected = app.grouped(User.authenticator())
+    passwordProtected.post("login", "access-token") { req async throws -> UserToken in
+        let user = try req.auth.require(User.self)
+        let token = try user.generateToken()
+        try await token.save(on: req.db)
+        return token
     }
-
-    app.get("hello") { req async -> String in
-        "Hello, world!"
+    
+    let tokenProtected = app.grouped(UserToken.authenticator())
+    tokenProtected.post("login", "test-token") { req async throws -> UserDTO in
+        try req.auth.require(User.self).toDTO()
     }
-
-    try app.register(collection: TodoController())
+    
+    // TODO: reset-password
+    // TODO: password-recovery
+    // TODO: password-recovery-html
+    
+    // Controller routes
+    try app.register(collection: UserController())
+    try app.register(collection: ItemController())
 }
