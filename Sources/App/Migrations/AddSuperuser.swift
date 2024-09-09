@@ -17,8 +17,8 @@ extension User {
         }
         
         func revert(on database: any Database) async throws {
-            let superuserEmail = Environment.get("FIRST_SUPERUSER") ?? "admin@example.com"
-            try await User.query(on: database).filter(\.$email == superuserEmail).delete()
+            let firstUserEmail = Environment.get("FIRST_SUPERUSER") ?? "admin@example.com"
+            let firstUser = try await User.query(on: database).filter(\.$email == firstUserEmail).delete()
         }
     }
 }
