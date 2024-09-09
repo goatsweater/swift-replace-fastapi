@@ -22,7 +22,7 @@ struct ItemController: RouteCollection {
     /// - Returns: A list of items.
     @Sendable
     func index(req: Request) async throws -> [ItemDTO] {
-        try await Item.query(on: req.db).all().map { $0.toDTO() }
+        try await Item.query(on: req.db).with(\.$owner).all().map { $0.toDTO() }
     }
     
     /// Get a specific item.
@@ -30,8 +30,17 @@ struct ItemController: RouteCollection {
     /// - Returns: An item.
     @Sendable
     func readItem(req: Request) async throws -> ItemDTO {
-        guard let item = try await Item.find(req.parameters.get("id"), on: req.db) else {
+        let itemId = req.parameters.get("id", as: UUID.self)
+        guard let item = try await Item.find(itemId, on: req.db) else {
             throw Abort(.notFound)
+        }
+        
+        let user = try req.auth.require(User.self)
+        guard let userId = user.id else {
+            throw Abort(.internalServerError, reason: "Cound not identify user")
+        }
+        if item.$owner.id != userId {
+            throw Abort(.forbidden)
         }
         
         return item.toDTO()
@@ -64,14 +73,23 @@ struct ItemController: RouteCollection {
     ///
     /// - Returns: The updated item.
     func update(req: Request) async throws -> ItemDTO {
-        guard let item = try await Item.find(req.parameters.get("id"), on: req.db) else {
+        let itemId = req.parameters.get("id", as: UUID.self)
+        guard let item = try await Item.find(itemId, on: req.db) else {
             throw Abort(.notFound)
         }
         
-        let updatedItem = try req.content.decode(Item.self)
+        let user = try req.auth.require(User.self)
+        guard let userId = user.id else {
+            throw Abort(.internalServerError, reason: "Cound not identify user")
+        }
+        if item.$owner.id != userId {
+            throw Abort(.forbidden)
+        }
+        
+        let updatedItem = try req.content.decode(ItemDTO.self)
         item.title = updatedItem.title
         item.description = updatedItem.description
-        item.$owner.id = updatedItem.$owner.id
+        item.$owner.id = updatedItem.ownerID
         
         try await item.save(on: req.db)
         
@@ -80,8 +98,13 @@ struct ItemController: RouteCollection {
     
     /// Delete an item.
     func delete(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
         guard let item = try await Item.find(req.parameters.get("id"), on: req.db) else {
             throw Abort(.notFound)
+        }
+        // The user must own the item they are deleting
+        if item.$owner.id != user.id {
+            throw Abort(.forbidden)
         }
         try await item.delete(on: req.db)
         return .ok
