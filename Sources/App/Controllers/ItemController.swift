@@ -3,7 +3,9 @@ import Vapor
 
 struct ItemController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        let items = routes.grouped("items")
+        // Authenticated routes
+        let tokenProtected = routes.grouped(UserToken.authenticator())
+        let items = tokenProtected.grouped("items")
         
         items.get(use: index)
         items.post(use: create)
@@ -32,16 +34,28 @@ struct ItemController: RouteCollection {
             throw Abort(.notFound)
         }
         
-        let itemDTO = ItemDTO(id: item.id, title: item.title, ownerID: item.$owner.id)
-        return itemDTO
+        return item.toDTO()
     }
     
     /// Create a new item
     ///
     ///  - Returns: An item.
     func create(req: Request) async throws -> ItemDTO {
-        let item = try req.content.decode(Item.self)
+        let user = try req.auth.require(User.self)
+        guard user.isActive == true else {
+            throw Abort(.unauthorized, reason: "Must be an active user to create items.")
+        }
+        guard let currentUserID = user.id else {
+            throw Abort(.internalServerError, reason: "Could not find ID for current user")
+        }
+        
+        try Item.Create.validate(content: req)
+        let create = try req.content.decode(Item.Create.self)
+        req.logger.debug("Creating item \(create.title).")
+        
+        let item = Item(title: create.title, description: create.description, ownerID: currentUserID)
         try await item.save(on: req.db)
+        req.logger.debug("\(item.title) saved in database.")
         
         return item.toDTO()
     }

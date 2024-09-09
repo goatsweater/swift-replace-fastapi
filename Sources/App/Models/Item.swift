@@ -1,5 +1,6 @@
 import Fluent
 import struct Foundation.UUID
+import Vapor
 
 final class Item: Model {
     static let schema = "items"
@@ -29,5 +30,18 @@ final class Item: Model {
     // DTO
     func toDTO() -> ItemDTO {
         .init(id: self.id, title: self.title, description: self.description, ownerID: self.$owner.id)
+    }
+}
+
+extension Item {
+    struct Create: Content {
+        var title: String
+        var description: String?
+    }
+}
+
+extension Item.Create: Validatable {
+    static func validations(_ validations: inout Validations) {
+        validations.add("title", as: String.self, is: !.empty)
     }
 }
